@@ -367,6 +367,219 @@ void ili9341_draw_bitmap_1b(ili9341_t *lcd,
   ili9341_transmit_wait(lcd);
 }
 
+// New functions added for my project
+
+void ili9341_my_draw_bmp(ili9341_t *lcd, ili9341_color_t color, ili9341_color_t color2,
+    int16_t x, int16_t y, uint16_t w, uint16_t h, uint8_t *bmp)
+{
+
+	  int16_t  _x = x, _y = y;
+	  uint16_t _w = w, _h = h;
+
+  // verify we have something within screen dimensions to be drawn
+  if (ibNOT(ili9341_clip_rect(lcd, &_x, &_y, &_w, &_h)))
+    { return; }
+
+  uint32_t num_pixels = _w * _h;
+  uint32_t rect_wc    = num_pixels;
+
+  uint32_t block_wc = rect_wc;
+  if (block_wc > __SPI_TX_BLOCK_MAX__)
+    { block_wc = __SPI_TX_BLOCK_MAX__; }
+
+  uint16_t color_le = __LEu16(&color);
+  uint16_t color2_le = __LEu16(&color2);
+
+  uint16_t byte = 0;
+  uint16_t b = 0;
+  b = (_y - y) * _w / 8;
+  //b = (w * h - _w * _h) / 8;
+  for (uint16_t i = 0; i < block_wc; ++i)
+    {
+      if (i & 7)
+      {
+    	  byte <<= 1;
+      }
+      else
+      {
+    	  byte = bmp[b];
+    	  b++;
+      }
+
+	  spi_tx_block[i] = (byte & 0x80) ? color_le : color2_le;
+    }
+
+  // select target region
+  ili9341_spi_tft_set_address_rect(lcd, _x, _y, (_x + _w - 1), (_y + _h - 1));
+  ili9341_spi_tft_select(lcd);
+
+  HAL_GPIO_WritePin(lcd->data_command_port, lcd->data_command_pin, __GPIO_PIN_SET__);
+
+  // repeatedly send MIN(remaining-words, block-words) words of color data until
+  // all rect words have been sent.
+  uint32_t curr_wc;
+  while (rect_wc > 0) {
+    curr_wc = rect_wc;
+    if (curr_wc > block_wc)
+      { curr_wc = block_wc; }
+    ili9341_transmit_color(lcd, curr_wc * 2/*16-bit words*/, spi_tx_block, ibYes);
+    rect_wc -= curr_wc;
+  }
+
+  ili9341_spi_tft_release(lcd);
+}
+
+void ili9341_my_draw_bmp_2b(ili9341_t *lcd, ili9341_color_t color, ili9341_color_t color2,
+		ili9341_color_t color3, ili9341_color_t color4, int16_t x, int16_t y, uint16_t w, uint16_t h, const uint8_t *bmp, uint8_t score_area)
+{
+
+	  int16_t  _x = x, _y = y;
+	  uint16_t _w = w, _h = h;
+
+	  if (score_area)
+	  {
+		  if (ibNOT(ili9341_clip_rect(lcd, &_x, &_y, &_w, &_h)))
+		    { return; }
+	  }
+	  else
+	  {
+		  if (ibNOT(ili9341_my_clip_rect(lcd, &_x, &_y, &_w, &_h)))
+		    { return; }
+	  }
+
+  uint32_t num_pixels = _w * _h;
+  uint32_t rect_wc    = num_pixels;
+
+  uint32_t block_wc = rect_wc;
+  if (block_wc > __SPI_TX_BLOCK_MAX__)
+    { block_wc = __SPI_TX_BLOCK_MAX__; }
+
+  uint16_t color_le = __LEu16(&color);
+  uint16_t color2_le = __LEu16(&color2);
+  uint16_t color3_le = __LEu16(&color3);
+  uint16_t color4_le = __LEu16(&color4);
+
+  // select target region
+  ili9341_spi_tft_set_address_rect(lcd, _x, _y, (_x + _w - 1), (_y + _h - 1));
+  ili9341_spi_tft_select(lcd);
+
+  HAL_GPIO_WritePin(lcd->data_command_port, lcd->data_command_pin, __GPIO_PIN_SET__);
+
+  uint16_t byte = 0;
+  uint16_t b = 0;
+  //b = (_y - y) * _w / 4;
+
+  b = ((_y - y) * _w + (_x - x)) / 4;
+
+  while (rect_wc > 0) {
+  for (uint16_t i = 0; i < block_wc; ++i)
+    {
+	  if (i % _w == 0)
+	  {
+		  b = b + (w - _w) / 4;
+	  }
+
+      if (i & 3)
+      {
+    	  byte <<= 2;
+      }
+      else
+      {
+    	  byte = bmp[b];
+    	  b++;
+      }
+
+      uint8_t bits = byte & 0xC0;
+
+      switch (bits)
+      {
+      case 0x00:
+    	  spi_tx_block[i] = color2_le;
+    	  break;
+      case 0xC0:
+    	  spi_tx_block[i] = color_le;
+    	  break;
+      case 0x80:
+    	  spi_tx_block[i] = color3_le;
+    	  break;
+      case 0x40:
+    	  spi_tx_block[i] = color4_le;
+    	  break;
+      }
+    }
+
+
+
+  // repeatedly send MIN(remaining-words, block-words) words of color data until
+  // all rect words have been sent.
+  uint32_t curr_wc;
+
+    curr_wc = rect_wc;
+    if (curr_wc > block_wc)
+      { curr_wc = block_wc; }
+    ili9341_transmit_color(lcd, curr_wc * 2/*16-bit words*/, spi_tx_block, ibYes);
+    rect_wc -= curr_wc;
+  }
+
+  ili9341_spi_tft_release(lcd);
+}
+
+ili9341_bool_t ili9341_my_clip_rect(ili9341_t *lcd,
+    int16_t *x, int16_t *y, uint16_t *w, uint16_t *h)
+{
+  // must have an origin to do anything
+  if ((NULL == x) || (NULL == y))
+    { return ibFalse; }
+
+  //  1. rect origin beyond screen dimensions, nothing to draw
+  if ((*x >= lcd->screen_size.width) || (*y >= lcd->screen_size.height))
+    { return ibFalse; }
+
+  //  2. rect width or height is 0, nothing to draw
+  if ((NULL != w) && (NULL != h)) {
+    if ((0U == *w) || (0U == *h))
+      { return ibFalse; }
+  }
+
+  // 3. rect origin has negative component, adjust origin and dimensions
+  if (*x < 0) {
+    if (NULL != w)
+      { *w += *x; }
+    *x = 0;
+  }
+
+  if (*y < 0) {
+    if (NULL != h)
+      { *h += *y; }
+    *y = 0;
+  } else if (*y < 20) {
+    if (NULL != h)
+      { *h -= (20 - *y); }
+    *y = 20;
+  }
+
+  if (*h + *y < 20)
+	  return ibFalse;
+
+  if (*h > 65000 || *w > 65000)
+	  return ibFalse;
+
+  if ((NULL != w) && (NULL != h)) {
+
+    //  4. rect width beyond screen width, reduce rect width
+    if ((*x + *w - 1) >= lcd->screen_size.width)
+      { *w = lcd->screen_size.width - *x; }
+
+    //  5. rect height beyond screen height, reduce rect height
+    if ((*y + *h - 1) >= lcd->screen_size.height)
+      { *h = lcd->screen_size.height - *y; }
+
+    return (*w > 0U) && (*h > 0U);
+  }
+
+  return ibTrue;
+}
+
 void ili9341_draw_char(ili9341_t *lcd, ili9341_text_attr_t attr, char ch)
 {
   // verify we have something within screen dimensions to be drawn
@@ -477,12 +690,12 @@ static ili9341_bool_t ili9341_clip_rect(ili9341_t *lcd,
   // 3. rect origin has negative component, adjust origin and dimensions
   if (*x < 0) {
     if (NULL != w)
-      { *w -= *x; }
+      { *w += *x; }
     *x = 0;
   }
   if (*y < 0) {
     if (NULL != h)
-      { *h -= *y; }
+      { *h += *y; }
     *y = 0;
   }
 

@@ -25,6 +25,8 @@ extern "C" {
 #elif defined(STM32G0)
 #include "stm32g0xx_hal.h"
 #endif
+#include "stm32f3xx_hal.h"
+
 
 // ------------------------------------------------------------------ defines --
 
